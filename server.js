@@ -1,54 +1,38 @@
 const express = require('express');
 const http = require('http');
-const cors = require('cors');
 const { Server } = require('socket.io');
+const path = require('path');
 
 const app = express();
-app.use(cors());
-
-
-app.use(express.static(__dirname));
-
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*' }
-});
+const io = new Server(server);
 
-const users = new Map(); 
+let onlineUsers = {};
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  console.log('a user connected');
 
-  
-  socket.on('join', (username) => {
-    users.set(socket.id, username);
-    io.emit('userList', Array.from(users.values()));
-    console.log(`${username} joined`);
+  socket.on('register', (username) => {
+    onlineUsers[socket.id] = username;
+    io.emit('onlineUsers', Object.values(onlineUsers));
   });
 
-  
-  socket.on('privateMessage', ({ toUsername, encryptedMessage }) => {
-    for (let [id, username] of users.entries()) {
-      if (username === toUsername) {
-        io.to(id).emit('privateMessage', {
-          fromUsername: users.get(socket.id),
-          encryptedMessage
-        });
-        break;
-      }
-    }
+  socket.on('sendMessage', (msg) => {
+    io.emit('receiveMessage', msg);
   });
 
-  
   socket.on('disconnect', () => {
-    const username = users.get(socket.id);
-    users.delete(socket.id);
-    io.emit('userList', Array.from(users.values()));
-    console.log(`${username} disconnected`);
+    delete onlineUsers[socket.id];
+    io.emit('onlineUsers', Object.values(onlineUsers));
+    console.log('user disconnected');
   });
+});
+
+// Serve index.html
+app.use(express.static(path.join(__dirname)));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -1,173 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Real-Time Encrypted Chat Demo</title>
+  <meta charset="UTF-8">
+  <title>Secure Chat App</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: 2rem auto; }
-    #login, #chat { margin-bottom: 1rem; }
-    #users { border: 1px solid #ccc; padding: 0.5rem; max-height: 150px; overflow-y: auto; }
-    #messages { border: 1px solid #ccc; padding: 0.5rem; height: 200px; overflow-y: auto; margin-bottom: 1rem; }
-    .message { margin-bottom: 0.5rem; }
-    .message strong { color: #007bff; }
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #chat { display: none; }
+    #users { margin-bottom: 10px; }
+    #messages { border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: scroll; margin-bottom: 10px; }
   </style>
 </head>
 <body>
 
   <div id="login">
-    <h2>Enter your username</h2>
-    <input type="text" id="usernameInput" placeholder="Username" />
-    <button id="loginBtn">Login</button>
+    <input type="text" id="username" placeholder="Enter your username" />
+    <button id="joinBtn">Join Chat</button>
   </div>
 
-  <div id="chat" style="display:none;">
-    <h2>Online Users</h2>
-    <div id="users"></div>
+  <div id="chat">
+    <h3>Online Users</h3>
+    <ul id="users"></ul>
 
-    <h2>Chat with <span id="chatWith">[Select a user]</span></h2>
     <div id="messages"></div>
 
-    <input type="text" id="messageInput" placeholder="Type your message" disabled />
-    <button id="sendBtn" disabled>Send</button>
+    <input type="text" id="messageInput" placeholder="Type your message" />
+    <button id="sendBtn">Send</button>
   </div>
 
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io('http://localhost:3000');
+    const socket = io(); // Works because frontend is served from backend
 
-    let username = null;
-    let selectedUser = null;
+    const loginDiv = document.getElementById('login');
+    const chatDiv = document.getElementById('chat');
+    const usernameInput = document.getElementById('username');
+    const joinBtn = document.getElementById('joinBtn');
+    const usersList = document.getElementById('users');
+    const messagesDiv = document.getElementById('messages');
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
 
-    
-    const sharedSecrets = {};
+    let username = '';
 
-    
-    async function deriveAESKeyFromString(str) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(str);
-      const hash = await crypto.subtle.digest("SHA-256", data);
-      return await crypto.subtle.importKey(
-        "raw",
-        hash,
-        { name: "AES-GCM" },
-        true,
-        ["encrypt", "decrypt"]
-      );
-    }
+    joinBtn.addEventListener('click', () => {
+      username = usernameInput.value.trim();
+      if (!username) return;
+      socket.emit('register', username);
+      loginDiv.style.display = 'none';
+      chatDiv.style.display = 'block';
+    });
 
-    
-    async function encryptMessage(key, message) {
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      const encoder = new TextEncoder();
-      const encoded = encoder.encode(message);
-      const ciphertext = await window.crypto.subtle.encrypt(
-        { name: "AES-GCM", iv },
-        key,
-        encoded
-      );
-      return (
-        btoa(String.fromCharCode(...iv)) +
-        ":" +
-        btoa(String.fromCharCode(...new Uint8Array(ciphertext)))
-      );
-    }
+    sendBtn.addEventListener('click', () => {
+      const text = messageInput.value.trim();
+      if (!text) return;
+      socket.emit('sendMessage', { user: username, text });
+      messageInput.value = '';
+    });
 
-    
-    async function decryptMessage(key, data) {
-      const [ivB64, ctB64] = data.split(":");
-      const iv = Uint8Array.from(atob(ivB64), c => c.charCodeAt(0));
-      const ciphertext = Uint8Array.from(atob(ctB64), c => c.charCodeAt(0));
-      try {
-        const decrypted = await window.crypto.subtle.decrypt(
-          { name: "AES-GCM", iv },
-          key,
-          ciphertext
-        );
-        const decoder = new TextDecoder();
-        return decoder.decode(decrypted);
-      } catch {
-        return "[Decryption failed]";
-      }
-    }
-
-    
-    const loginDiv = document.getElementById("login");
-    const chatDiv = document.getElementById("chat");
-    const usernameInput = document.getElementById("usernameInput");
-    const loginBtn = document.getElementById("loginBtn");
-    const usersDiv = document.getElementById("users");
-    const chatWithSpan = document.getElementById("chatWith");
-    const messagesDiv = document.getElementById("messages");
-    const messageInput = document.getElementById("messageInput");
-    const sendBtn = document.getElementById("sendBtn");
-
-    loginBtn.onclick = () => {
-      const name = usernameInput.value.trim();
-      if (!name) return alert("Enter username");
-      username = name;
-      socket.emit("join", username);
-      loginDiv.style.display = "none";
-      chatDiv.style.display = "block";
-    };
-
-    
-    socket.on("userList", (userList) => {
-      usersDiv.innerHTML = "";
-      userList.forEach(user => {
-        if (user === username) return; // skip self
-        const userElem = document.createElement("div");
-        userElem.textContent = user;
-        userElem.style.cursor = "pointer";
-        userElem.style.padding = "0.25rem";
-        userElem.onclick = async () => {
-          selectedUser = user;
-          chatWithSpan.textContent = user;
-          messagesDiv.innerHTML = "";
-          messageInput.disabled = false;
-          sendBtn.disabled = false;
-
-          
-          const keyId = [username, selectedUser].sort().join(":");
-          if (!sharedSecrets[keyId]) {
-            sharedSecrets[keyId] = await deriveAESKeyFromString(keyId);
-          }
-        };
-        usersDiv.appendChild(userElem);
+    socket.on('onlineUsers', (users) => {
+      usersList.innerHTML = '';
+      users.forEach(u => {
+        const li = document.createElement('li');
+        li.textContent = u;
+        usersList.appendChild(li);
       });
     });
 
-    
-    sendBtn.onclick = async () => {
-      if (!selectedUser) return alert("Select a user to chat with");
-      const msg = messageInput.value.trim();
-      if (!msg) return;
-      const keyId = [username, selectedUser].sort().join(":");
-      const key = sharedSecrets[keyId];
-      const encrypted = await encryptMessage(key, msg);
-      socket.emit("privateMessage", { toUsername: selectedUser, encryptedMessage: encrypted });
-      addMessage(`You (to ${selectedUser})`, msg);
-      messageInput.value = "";
-    };
-
-    
-    socket.on("privateMessage", async ({ fromUsername, encryptedMessage }) => {
-      const keyId = [username, fromUsername].sort().join(":");
-      if (!sharedSecrets[keyId]) {
-        sharedSecrets[keyId] = await deriveAESKeyFromString(keyId);
-      }
-      const key = sharedSecrets[keyId];
-      const decrypted = await decryptMessage(key, encryptedMessage);
-      addMessage(`${fromUsername}`, decrypted);
-    });
-
-    
-    function addMessage(sender, text) {
-      const div = document.createElement("div");
-      div.className = "message";
-      div.innerHTML = `<strong>${sender}:</strong> ${text}`;
+    socket.on('receiveMessage', (msg) => {
+      const div = document.createElement('div');
+      div.innerHTML = `<b>${msg.user}:</b> ${msg.text}`;
       messagesDiv.appendChild(div);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }
+    });
   </script>
 </body>
 </html>
