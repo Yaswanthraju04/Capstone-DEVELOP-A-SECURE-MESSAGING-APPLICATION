@@ -34,7 +34,7 @@ io.on('connection', (socket) => {
 });
 
 // Catch-all route to serve React frontend (must be AFTER all API routes)
-app.get('/*', (req, res) => {
+app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
