@@ -1,38 +1,45 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
 const path = require('path');
+const socketIo = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = socketIo(server, {
+  cors: {
+    origin: '*',
+  },
+});
 
-let onlineUsers = {};
+// Serve static files from React build (or your frontend)
+app.use(express.static(path.join(__dirname, 'public')));
 
+// Example API route
+app.get('/api/hello', (req, res) => {
+  res.json({ message: 'Hello from server!' });
+});
+
+// Socket.IO logic
 io.on('connection', (socket) => {
-  console.log('a user connected');
-
-  socket.on('register', (username) => {
-    onlineUsers[socket.id] = username;
-    io.emit('onlineUsers', Object.values(onlineUsers));
-  });
-
-  socket.on('sendMessage', (msg) => {
-    io.emit('receiveMessage', msg);
-  });
+  console.log('New client connected', socket.id);
 
   socket.on('disconnect', () => {
-    delete onlineUsers[socket.id];
-    io.emit('onlineUsers', Object.values(onlineUsers));
-    console.log('user disconnected');
+    console.log('Client disconnected', socket.id);
+  });
+
+  // Example: broadcast a message
+  socket.on('chat message', (msg) => {
+    io.emit('chat message', msg);
   });
 });
 
-// Serve index.html
-app.use(express.static(path.join(__dirname)));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+// Catch-all route to serve React frontend (must be AFTER all API routes)
+app.get('/*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Start server
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
